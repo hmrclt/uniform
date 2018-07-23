@@ -59,3 +59,5 @@ git.gitTagToVersionNumber := { tag: String =>
 }
 
 initialCommands in console := """import uniform._"""
+
+useGpg := true
