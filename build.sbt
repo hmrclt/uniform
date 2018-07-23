@@ -2,7 +2,7 @@
 scalaVersion := "2.11.12"
 crossScalaVersions := Seq("2.11.12", "2.12.6")
 
-organization := "ltbs"
+organization := "uk.gov.hmrc"
 name := "uniform"
 
 homepage := Some(url("https://github.com/hmrclt/uniform"))
@@ -61,3 +61,5 @@ git.gitTagToVersionNumber := { tag: String =>
 initialCommands in console := """import uniform._"""
 
 useGpg := true
+
+licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.html"))
