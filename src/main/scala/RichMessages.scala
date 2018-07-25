@@ -44,7 +44,8 @@ package object playutil {
       List(key, s"$key.1").flatMap(get(_, args)) ++ inner().reverse
     }
 
-    def extraMessage(key: String, args: Any*)(implicit lang: Lang, messages: Messages, extraMessages: ExtraMessages): String = {
+    def extraMessage(key: String, args: Any*)
+      (implicit lang: Lang, messages: Messages, extraMessages: ExtraMessages): String = {
       if (extraMessages.messages.get(key).nonEmpty) {
         extraMessages.messages(key)
       } else mo.apply(key, args)
