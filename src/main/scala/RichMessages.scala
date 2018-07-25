@@ -10,9 +10,7 @@ package object playutil {
 
   implicit class RichLocalDate(ld: LocalDate) {
 
-    def suffix: String = {
-      ld.getDayOfMonth % 10
-    } match {
+    def suffix: String = {ld.getDayOfMonth % 10} match {
       case 1 => "st"
       case 2 => "nd"
       case 3 => "rd"
@@ -34,9 +32,7 @@ package object playutil {
         none[String]
     }
 
-    def many(
-              key: String,
-              args: Any*)(implicit provider: Messages): List[String] = {
+    def many(key: String, args: Any*)(implicit provider: Messages): List[String] = {
 
       @annotation.tailrec
       def inner(cnt: Int = 2, list: List[String] = Nil): List[String] =
