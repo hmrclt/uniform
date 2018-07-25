@@ -148,6 +148,9 @@ package webmonad {
   case class Delete(i: Int) extends Control {
     override def toString = s"Delete.$i"
   }
+  case class Edit(i: Int) extends Control {
+    override def toString = s"Edit.$i"
+  }
 
   trait WebMonadController extends Controller with i18n.I18nSupport {
 
@@ -182,13 +185,17 @@ package webmonad {
       min: Int = 0,
       max: Int = 1000,
       default: List[A] = List.empty[A],
-      deleteConfirmation: A => WebMonad[Boolean] = {_: A => true.pure[WebMonad]}
+      deleteConfirmation: A => WebMonad[Boolean] = {_: A => true.pure[WebMonad]},
+      itemEdit: Option[A => WebMonad[A]] = None
     )(listingPage: (String, Int, Int, List[A]) => WebMonad[Control])
       (wm: String => WebMonad[A])
       (implicit format: Format[A]): WebMonad[List[A]] =
     {
       val innerId = s"add-$id"
       val innerPage: WebMonad[A] = wm(innerId)
+
+      val editId = s"edit-$id"
+      val editPage: WebMonad[A] = wm(editId)
 
       val dataKey = s"${id}_data"
       val updateProgram: WebMonad[List[A]] = for {
@@ -201,27 +208,50 @@ package webmonad {
         i <- many(id, min, max)(listingPage)(wm)
       } yield i
 
+      def allItems: EitherT[WebInner, Result, List[A]] = read[List[A]](dataKey).map{_.getOrElse(default)}
+
+      def replaceItem(index: Int, item: A) = updateItem(index, List(item))
+      def removeItem(index: Int) = updateItem(index, Nil)
+      def updateItem(index: Int, item: List[A]): WebMonad[Unit] =
+        update[List[A]](dataKey) { x =>
+          {
+            val all = x.getOrElse(default)
+            all.take(index) ++ item ++ all.drop(index + 1)
+          }.some
+        }
+
       def deleteProgram(index: Int): WebMonad[List[A]] = for {
-        allItems <- read[List[A]](dataKey).map{_.getOrElse(default)}
-        _ <- update[List[A]](dataKey) { x => {
-               val all = x.getOrElse(default)
-               all.take(index) ++ all.drop(index + 1)
-             }.some } when deleteConfirmation(allItems(index))
+        allItems <- allItems
+        _ <- removeItem(index) when deleteConfirmation(allItems(index))
         _ <- redirect(id)
       } yield {
         throw new IllegalStateException("Redirect failing for deletion!")
       }
 
+      def editProgram(index: Int): WebMonad[List[A]] = {
+        itemEdit match {
+          case Some(editor) =>
+            for {
+              allItems <- allItems
+              changedItem <- editor(allItems(index))
+              _ <- replaceItem(index, changedItem)
+              _ <- clear(editId)
+              i <- many(id, min, max)(listingPage)(wm)
+            } yield i
+          case _ =>
+            many(id, min, max)(listingPage)(wm)
+        }
+      }
+
       for {
-        items <- read[List[A]](dataKey).map{_.getOrElse(default)}
+        items <- allItems
         res <- listingPage(id,min,max,items).flatMap {
           case Add => updateProgram
-          case Done => read[List[A]](dataKey).map {
-            _.getOrElse(default)
-          }: WebMonad[List[A]]
+          case Edit(index) => editProgram(index)
+          case Done => allItems
           case Delete(index) => deleteProgram(index)
         }
-      } yield (res)
+      } yield res
 
     }
 
