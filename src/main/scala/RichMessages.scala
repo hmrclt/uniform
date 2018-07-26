@@ -1,12 +1,10 @@
 package uk.gov.hmrc.uniform
 
-import play.api.i18n._
-import play.api.data.Forms._
-import play.api.data._
-import play.api.data.format.Formats._
-import cats.implicits._
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter.ofPattern
+
+import cats.implicits._
+import play.api.i18n._
 
 package object playutil {
 
@@ -29,26 +27,31 @@ package object playutil {
 
     def get(key: String, args: Any*)(implicit provider: Messages): Option[String] = {
       if (provider.isDefinedAt(key))
-        provider.messages(key, args:_*).some
+        provider.messages(key, args: _*).some
       else
         none[String]
     }
 
-    def many(
-      key: String,
-      args: Any*)(implicit provider: Messages): List[String] =
-    {
+    def many(key: String, args: Any*)(implicit provider: Messages): List[String] = {
 
       @annotation.tailrec
       def inner(cnt: Int = 2, list: List[String] = Nil): List[String] =
-        get(s"$key.$cnt", args:_*) match {
-          case Some(_) => inner(cnt+1, provider.messages(s"$key.$cnt", args:_*) :: list)
-          case None       => list
+        get(s"$key.$cnt", args: _*) match {
+          case Some(_) => inner(cnt + 1, provider.messages(s"$key.$cnt", args: _*) :: list)
+          case None => list
         }
 
-      List(key, s"$key.1").map(get(_, args)).flatten ++ inner().reverse
+      List(key, s"$key.1").flatMap(get(_, args)) ++ inner().reverse
     }
 
+    def extraMessage(key: String, args: Any*)
+      (implicit lang: Lang, messages: Messages, extraMessages: ExtraMessages): String = {
+      if (extraMessages.messages.get(key).nonEmpty) {
+        extraMessages.messages(key)
+      } else mo.apply(key, args)
+    }
   }
+
+  case class ExtraMessages(messages: Map[String, String] = Map.empty)
 
 }
