@@ -1,4 +1,3 @@
-
 scalaVersion := "2.11.12"
 crossScalaVersions := Seq("2.11.12", "2.12.6")
 
@@ -33,11 +32,13 @@ libraryDependencies ++= {
   }
 
   Seq(
-    "com.chuusai" %% "shapeless" % "2.3.3",
-    "com.github.mpilquist" %% "simulacrum" % "0.12.0",
-    "com.beachape" %% "enumeratum" % "1.5.13",
-    "org.typelevel" %% "cats-core" % "1.1.0",
-    "com.typesafe.play" %% "play" % playVersion % "provided"
+    "com.chuusai"          %% "shapeless"   % "2.3.3",
+    "com.github.mpilquist" %% "simulacrum"  % "0.12.0",
+    "com.beachape"         %% "enumeratum"  % "1.5.13",
+    "org.typelevel"        %% "cats-core"   % "1.1.0",
+    "com.typesafe.play"    %% "play"        % playVersion % "provided",
+    "org.scalatest"        %% "scalatest"   % "3.0.5"     % "test",
+    "org.scalacheck"       %% "scalacheck"  % "1.13.5"    % "test"
   )
 }
 
@@ -63,3 +64,12 @@ initialCommands in console := """import uniform._"""
 useGpg := true
 
 licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.html"))
+
+// Documentation
+enablePlugins(TutPlugin)
+enablePlugins(MicrositesPlugin)
+enablePlugins(GhpagesPlugin)
+
+micrositeGithubOwner := "hmrclt"
+micrositeGithubRepo := name.value
+git.remoteRepo := "git@github.com:hmrclt/uniform.git"
