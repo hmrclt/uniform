@@ -36,7 +36,7 @@ libraryDependencies ++= {
     "com.github.mpilquist" %% "simulacrum"                     % "0.12.0",
     "com.beachape"         %% "enumeratum"                     % "1.5.13",
     "org.typelevel"        %% "cats-core"                      % "1.1.0",
-    "uk.gov.hmrc"          %% "play-conditional-form-mapping"  % "0.2.0",
+    "uk.gov.hmrc"          %  "play-conditional-form-mapping_2.11"  % "0.2.0",
     "com.typesafe.play"    %% "play"                           % playVersion % "provided",
     "org.scalatest"        %% "scalatest"                      % "3.0.5"     % "test",
     "org.scalacheck"       %% "scalacheck"                     % "1.13.5"    % "test"
