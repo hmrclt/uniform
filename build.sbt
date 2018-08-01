@@ -32,13 +32,14 @@ libraryDependencies ++= {
   }
 
   Seq(
-    "com.chuusai"          %% "shapeless"   % "2.3.3",
-    "com.github.mpilquist" %% "simulacrum"  % "0.12.0",
-    "com.beachape"         %% "enumeratum"  % "1.5.13",
-    "org.typelevel"        %% "cats-core"   % "1.1.0",
-    "com.typesafe.play"    %% "play"        % playVersion % "provided",
-    "org.scalatest"        %% "scalatest"   % "3.0.5"     % "test",
-    "org.scalacheck"       %% "scalacheck"  % "1.13.5"    % "test"
+    "com.chuusai"          %% "shapeless"                      % "2.3.3",
+    "com.github.mpilquist" %% "simulacrum"                     % "0.12.0",
+    "com.beachape"         %% "enumeratum"                     % "1.5.13",
+    "org.typelevel"        %% "cats-core"                      % "1.1.0",
+    "uk.gov.hmrc"          %% "play-conditional-form-mapping"  % "0.2.0",
+    "com.typesafe.play"    %% "play"                           % playVersion % "provided",
+    "org.scalatest"        %% "scalatest"                      % "3.0.5"     % "test",
+    "org.scalacheck"       %% "scalacheck"                     % "1.13.5"    % "test"
   )
 }
 
@@ -67,9 +68,30 @@ licenses += ("Apache-2.0", url("https://www.apache.org/licenses/LICENSE-2.0.html
 
 // Documentation
 enablePlugins(TutPlugin)
-enablePlugins(MicrositesPlugin)
-enablePlugins(GhpagesPlugin)
+
+enablePlugins(SiteScaladocPlugin)
 
 micrositeGithubOwner := "hmrclt"
 micrositeGithubRepo := name.value
 git.remoteRepo := "git@github.com:hmrclt/uniform.git"
+
+micrositeName := "Uniform"
+micrositeDescription := "Fast Play Journeys"
+micrositeHighlightTheme := "monokai"
+micrositeDocumentationUrl := "/uniform/latest/api"
+micrositeBaseUrl := "/uniform"
+micrositeAuthor := "Luke Tebbs"
+micrositeFooterText := None
+
+// micrositePalette := Map(
+//         "brand-primary"     -> "#E05236",
+//         "brand-secondary"   -> "#3F3242",
+//         "brand-tertiary"    -> "#2D232F",
+//         "gray-dark"         -> "#453E46",
+//         "gray"              -> "#837F84",
+//         "gray-light"        -> "#E3E2E3",
+//         "gray-lighter"      -> "#F4F3F4",
+//         "white-color"       -> "#FFFFFF")
+autoAPIMappings := true
+enablePlugins(MicrositesPlugin)
+ghpagesNoJekyll := false

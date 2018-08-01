@@ -6,8 +6,9 @@ import cats.data.{EitherT, RWST}
 import cats.implicits._
 import cats.{Monoid, Order}
 import play.api._
+import play.api.data.{ FormError, Forms, Field, Form, Mapping }
 import play.api.data.Forms._
-import play.api.data.{Form, Mapping}
+import play.api.data.format.Formatter
 import play.api.http.Writeable
 import play.api.i18n.Messages
 import play.api.libs.json._
@@ -16,6 +17,7 @@ import play.twirl.api.Html
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
+import uk.gov.hmrc.uniform.HtmlShow.ops._
 
 trait FormHtml[A] {
   def asHtmlForm(key: String, form: Form[A])(implicit messages: Messages): Html
@@ -410,5 +412,140 @@ package webmonad {
     def when[A](b: => Boolean)(wm: WebMonad[A]): WebMonad[Option[A]] =
       if(b) wm.map{_.some} else none[A].pure[WebMonad]
 
+    def askPageTemplate[A](key: String, form: Form[A], formHtml: Html, path: List[String]): Html
+    def tellPageTemplate[A](key: String, form: Form[A], path: List[String], show: Html): Html
+    def listingPageTemplate(key: String, form: Form[String], items: List[Html], path: List[String], min: Int, max: Int): Html
+    def optionalPageTemplate[A](key: String, form: Form[A], formHtml: Html, path: List[String]): Html
+
+    // Because I decided earlier on to make everything based off of JSON
+    // I have to write silly things like this. TODO
+    implicit val formatUnit: Format[Unit] = new Format[Unit] {
+      def writes(u: Unit) = JsNull
+      def reads(v: JsValue) = JsSuccess(())
+    }
+
+    implicit def optFormatter[A](implicit innerFormatter: Format[A]): Format[Option[A]] =
+      new Format[Option[A]] {
+        def reads(json: JsValue): JsResult[Option[A]] = json match {
+          case JsNull => JsSuccess(none[A])
+          case a      => innerFormatter.reads(a).map{_.some}
+        }
+        def writes(o: Option[A]): JsValue =
+          o.map{innerFormatter.writes}.getOrElse(JsNull)
+      }
+
+
+    val bool: Mapping[Boolean] = optional(boolean)
+      .verifying("error.radio-form.choose-option", _.isDefined)
+      .transform(_.getOrElse(false),{x: Boolean => x.some})
+
+    def askOption[T](
+      innerMapping: Mapping[T],
+      key: String,
+      default: Option[Option[T]] = None
+    )(implicit
+        htmlForm: FormHtml[T],
+      fmt: Format[T]
+    ): WebMonad[Option[T]] = {
+      import uk.gov.voa.play.form.ConditionalMappings.mandatoryIfTrue
+
+      val outerMapping: Mapping[Option[T]] = mapping(
+        "outer" -> bool,
+        "inner" -> mandatoryIfTrue(s"${key}.outer", innerMapping)
+      ){(_,_) match { case (outer, inner) => inner }
+      }( a => (a.isDefined, a).some )
+
+      formPage(key)(outerMapping, default) { (path, form, r) =>
+        implicit val request: Request[AnyContent] = r
+
+        val innerForm: Form[T] = Form(single { key -> single { "inner" -> innerMapping }})
+        val innerFormBound = if (form.data.get(s"$key.outer") != Some("true")) innerForm else innerForm.bind(form.data)
+
+        optionalPageTemplate(key, form, htmlForm.asHtmlForm(key + ".inner", innerFormBound), path)
+      }
+    }
+
+    def askEmptyOption[T](
+      innerMapping: Mapping[T],
+      key: String,
+      default: Option[T] = None
+    )(implicit htmlForm: FormHtml[T],
+      fmt: Format[T],
+      mon: Monoid[T]
+    ): WebMonad[T] = {
+      val monDefault: Option[Option[T]] = default.map{_.some.filter{_ != mon.empty}}
+      askOption[T](innerMapping, key, monDefault)
+        .map{_.getOrElse(mon.empty)}
+    }
+
+
+    protected def tell[A: HtmlShow](
+      id: String,
+      a: A
+    ): WebMonad[Unit] = {
+      val formatter = new Formatter[Unit] {
+        override def bind(key: String, data: Map[String, String]): Either[Seq[FormError], Unit] = Right(())
+        override def unbind(key: String, value: Unit): Map[String, String] = Map.empty
+      }
+      val unitMapping: Mapping[Unit] =
+        Forms.of[Unit](formatter)
+
+      formPage(id)(unitMapping, none[Unit]){  (path, form, r) =>
+        implicit val request: Request[AnyContent] = r
+
+        tellPageTemplate(id, form, path, a.showHtml)
+      }
+    }
+
+    def ask[T](mapping: Mapping[T], key: String, default: Option[T] = None)(implicit htmlForm: FormHtml[T], fmt: Format[T]): WebMonad[T] =
+      formPage(key)(mapping, default) { (path, form, r) =>
+        implicit val request: Request[AnyContent] = r
+        askPageTemplate(key, form, htmlForm.asHtmlForm(key, form), path)
+      }
+
+    def ask[T](mapping: Mapping[T], key: String)(implicit htmlForm: FormHtml[T], fmt: Format[T]): WebMonad[T] =
+      ask(mapping, key, None)
+
+    def ask[T](mapping: Mapping[T], key: String, default: T)(implicit htmlForm: FormHtml[T], fmt: Format[T]): WebMonad[T] =
+      ask(mapping, key, default.some)
+
+    def askList[A](
+      innerMapping: Mapping[A],
+      id: String,
+      min: Int = 0,
+      max: Int = 100,
+      default: List[A] = List.empty[A]
+    )(implicit hs: HtmlShow[A], htmlForm: FormHtml[A], format: Format[A]): WebMonad[List[A]] =
+      manyT[A](id, ask(innerMapping, _), min, max, default)
+
+    protected def manyT[A](
+      id: String,
+      wm: String => WebMonad[A],
+      min: Int = 0,
+      max: Int = 100,
+      default: List[A] = List.empty[A]
+    )(implicit hs: HtmlShow[A], format: Format[A]): WebMonad[List[A]] = {
+      def outf(x: String): Control = x match {
+        case "Add" => Add
+        case "Done" => Done
+        case x if x.startsWith("Delete") => Delete(x.split("\\.").last.toInt)
+      }
+      def inf(x: Control): String = x.toString
+
+      def confirmation(q: A): WebMonad[Boolean] =
+        tell(s"remove-$id", q).map{_ => true}
+
+      many[A](id, min, max, default, confirmation){ case (iid, minA, maxA, items) =>
+
+        val mapping = nonEmptyText
+          .verifying(s"$id.error.items.tooFew", a => a != "Done" || items.size >= min)
+          .verifying(s"$id.error.items.tooMany", a => a != "Add" || items.size < max)
+
+        formPage(id)(mapping) { (path, b, r) =>
+          implicit val request: Request[AnyContent] = r
+          listingPageTemplate(id, b, items.map{_.showHtml}, path, min, max)
+        }.imap(outf)(inf)
+      }(wm)
+    }
   }
 }
