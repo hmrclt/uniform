@@ -39,14 +39,14 @@ package object webmonad {
   // write out Pages (path state)
   type Path = List[String]
 
-  type WebInner[A] = RWST[Future, (String, Request[AnyContent]), Path, (Path, DbState), A]
+  type WebInner[A] = RWST[Future, (JourneyConfig, String, Request[AnyContent]), Path, (Path, DbState), A]
   type WebMonad[A] = EitherT[WebInner, Result, A]
 
   def webMonad[A](
     f: (String, Request[AnyContent], Path, DbState) => Future[(Option[String], Path, DbState, Either[Result, A])]
   )(implicit ec: ExecutionContext): WebMonad[A] =
     EitherT[WebInner, Result, A] {
-      RWST { case ((pathA, r), (pathB, st)) =>
+      RWST { case ((config, pathA, r), (pathB, st)) =>
         f(pathA, r, pathB, st).map { case (a, b, c, d) => (a.toList, (b, c), d) }
       }
     }
@@ -152,6 +152,15 @@ package webmonad {
     override def toString = s"Edit.$i"
   }
 
+
+  sealed trait JourneyMode
+  case object SingleStep extends JourneyMode
+  case object LeapAhead extends JourneyMode
+
+  case class JourneyConfig(
+    mode: JourneyMode = SingleStep
+  )
+
   trait WebMonadController extends Controller with i18n.I18nSupport {
 
     implicit def ec: ExecutionContext
@@ -166,7 +175,7 @@ package webmonad {
     implicit def resultToWebMonad[A](result: Result): WebMonad[A] =
 
       EitherT[WebInner, Result, A] {
-        RWST { case ((_, r), (path, st)) =>
+        RWST { case ((_, _, r), (path, st)) =>
           (
             List.empty[String],
             (path, st),
@@ -257,7 +266,8 @@ package webmonad {
 
     def runInner(request: Request[AnyContent])(program: WebMonad[Result])(id: String)(
       load: String => Future[Map[String, JsValue]],
-      save: (String, Map[String, JsValue]) => Future[Unit]
+      save: (String, Map[String, JsValue]) => Future[Unit],
+      config: JourneyConfig = JourneyConfig()
     ): Future[Result] = {
         request.session.get("uuid").fold {
           Redirect(id).withSession {
@@ -276,7 +286,7 @@ package webmonad {
               .fold(initialData)(parse)
 
             program.value
-              .run((id, request), (List.empty[String], data))
+              .run((config, id, request), (List.empty[String], data))
               .flatMap { case (_, (path, state), a) => {
                 if (state != initialData) {
                   save(sessionUUID, state)
@@ -299,7 +309,9 @@ package webmonad {
     }
 
     def formPage[A, B: Writeable](id: String)(
-      mapping: Mapping[A], default: Option[A] = None
+      mapping: Mapping[A],
+      default: Option[A] = None,
+      journeyMode: JourneyMode = SingleStep
     )(
       render: (List[String], Form[A], Request[AnyContent]) => B
     )(implicit f: Format[A]): WebMonad[A] = {
@@ -308,7 +320,7 @@ package webmonad {
         default.map{form.fill}.getOrElse(form)
 
       EitherT[WebInner, Result, A] {
-        RWST { case ((targetId, r), (path, st)) =>
+        RWST { case ((config, targetId, r), (path, st)) =>
 
           implicit val request: Request[AnyContent] = r
 
@@ -355,7 +367,7 @@ package webmonad {
                 }
               )
               // something in database, previous page submitted
-              case ("post", Some(json), _) if path.contains(targetId) =>
+              case ("post", Some(json), _) if path.contains(targetId) && config.mode == SingleStep => 
                 (
                   id.pure[List],
                   (id :: path, st),
@@ -368,6 +380,12 @@ package webmonad {
                   (id :: path, st),
                   json.as[A].asRight[Result]
                 )
+              case ("post", None, _) if config.mode == LeapAhead && default.isDefined =>
+                (
+                  id.pure[List],
+                  (id :: path, st + (id -> Json.toJson(default.get))),
+                  default.get.asRight[Result]
+                ) 
               case ("post", _, _) | ("get", _, _) =>
                 (
                   id.pure[List],
