@@ -321,6 +321,7 @@ package webmonad {
             logger.info(s"METHOD:$method DATA:$data TARGET:$targetId ID:$id DEFAULT:$default");
 
             (method, data, targetId) match {
+
               case ("get", _, "") =>
                 logger.info(s"empty URI, redirecting to ./$id")
                 (
@@ -328,7 +329,6 @@ package webmonad {
                   (path, st),
                   Redirect(s"./$id").asLeft[A]
                 )
-
               case ("get", None, `id`) =>
                 logger.info(s"nothing in database, step in URI, render empty form")
                 (
