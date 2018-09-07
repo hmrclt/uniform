@@ -18,10 +18,12 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 
 trait FormHtml[A] {
-  def asHtmlForm(key: String, form: Form[A])(implicit messages: Messages): Html
+  def asHtmlForm(key: String, form: Form[A], default: Option[A])(implicit messages: Messages): Html
 }
 
 package object webmonad {
+
+  val logger: Logger = Logger("webmonad")
 
   implicit val htmlSemigroup: Monoid[Html] = new Monoid[Html] {
     def combine(x: Html, y: Html): Html = Html(x.toString ++ y.toString)
@@ -301,7 +303,7 @@ package webmonad {
     def formPage[A, B: Writeable](id: String)(
       mapping: Mapping[A], default: Option[A] = None
     )(
-      render: (List[String], Form[A], Request[AnyContent]) => B
+      render: (List[String], Form[A], Request[AnyContent], Option[A]) => B
     )(implicit f: Format[A]): WebMonad[A] = {
       val form = Form(single(id -> mapping))
       val formWithDefault =
@@ -316,59 +318,74 @@ package webmonad {
           val method = request.method.toLowerCase
           val data = st.get(id);
           {
+            logger.info(s"METHOD:$method DATA:$data TARGET:$targetId ID:$id DEFAULT:$default");
+
             (method, data, targetId) match {
-              // nothing in database, step in URI, render empty form
+              case ("get", _, "") =>
+                logger.info(s"empty URI, redirecting to ./$id")
+                (
+                  id.pure[List],
+                  (path, st),
+                  Redirect(s"./$id").asLeft[A]
+                )
+
               case ("get", None, `id`) =>
+                logger.info(s"nothing in database, step in URI, render empty form")
                 (
                   id.pure[List],
                   (path, st),
-                  Ok(render(path, formWithDefault, implicitly)).asLeft[A]
+                  Ok(render(path, formWithDefault, implicitly, default)).asLeft[A]
                 )
-              // something in database, step in URI, user revisting old page, render filled in form
               case ("get", Some(json), `id`) =>
+                logger.info(s"something in database, step in URI, user revisting old page, render filled in form")
                 (
                   id.pure[List],
                   (path, st),
-                  Ok(render(path, form.fill(json.as[A]), implicitly)).asLeft[A]
+                  Ok(render(path, form.fill(json.as[A]), implicitly, default)).asLeft[A]
                 )
-              // something in database, not step in URI, pass through
               case ("get", Some(json), _) =>
+                logger.info(s"something in database, not step in URI, pass through")
                 (
                   id.pure[List],
                   (id :: path, st),
                   json.as[A].asRight[Result]
                 )
-              case ("post", _, `id`) => form.bindFromRequest.fold(
-                formWithErrors => {
-                  (
-                    id.pure[List],
-                    (path, st),
-                    BadRequest(render(path, formWithErrors, implicitly)).asLeft[A]
-                  )
-                },
-                formData => {
-                  (
-                    id.pure[List],
-                    (id :: path, st + (id -> Json.toJson(formData))),
-                    formData.asRight[Result]
-                  )
-                }
-              )
-              // something in database, previous page submitted
+              case ("post", _, `id`) =>
+                logger.info(s"post for this page, processing")
+                form.bindFromRequest.fold(
+                  formWithErrors => {
+                    logger.info(s"errors on form")
+                    (
+                      id.pure[List],
+                      (path, st),
+                      BadRequest(render(path, formWithErrors, implicitly, default)).asLeft[A]
+                    )
+                  },
+                  formData => {
+                    logger.info(s"no errors on form")
+                    (
+                      id.pure[List],
+                      (id :: path, st + (id -> Json.toJson(formData))),
+                      formData.asRight[Result]
+                    )
+                  }
+                )
               case ("post", Some(json), _) if path.contains(targetId) =>
+                logger.info(s"something in database, previous page submitted")
                 (
                   id.pure[List],
                   (id :: path, st),
                   Redirect(s"./$id").asLeft[A]
                 )
-              // something in database, posting, not step in URI nor previous page -> pass through
               case ("post", Some(json), _) =>
+                logger.info(s"something in database, posting, not step in URI nor previous page -> pass through")
                 (
                   id.pure[List],
                   (id :: path, st),
                   json.as[A].asRight[Result]
                 )
               case ("post", _, _) | ("get", _, _) =>
+                logger.info(s"bad uri - redirecting to ./$id")
                 (
                   id.pure[List],
                   (path, st),
