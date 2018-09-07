@@ -317,6 +317,15 @@ package webmonad {
           val data = st.get(id);
           {
             (method, data, targetId) match {
+
+              // empty URI, redirecting to id
+              case ("get", _, "") =>
+                (
+                  id.pure[List],
+                  (path, st),
+                  Redirect(s"./$id").asLeft[A]
+                )
+
               // nothing in database, step in URI, render empty form
               case ("get", None, `id`) =>
                 (
