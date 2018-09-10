@@ -51,7 +51,7 @@ package object playutil {
       } else mo.apply(key, args)
     }
 
-    def extraMessage(keys: Seq[String], args: Any*)
+    def extraMessages(keys: Seq[String], args: Any*)
       (implicit lang: Lang, messages: Messages, extraMessages: ExtraMessages): String = {
       if (extraMessages.messages.get(keys.head).nonEmpty) {
         extraMessages.messages(keys.head)
