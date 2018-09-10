@@ -45,10 +45,17 @@ package object playutil {
     }
 
     def extraMessage(key: String, args: Any*)
-      (implicit lang: Lang, messages: Messages, extraMessages: ExtraMessages): String = {
+                    (implicit lang: Lang, messages: Messages, extraMessages: ExtraMessages): String = {
       if (extraMessages.messages.get(key).nonEmpty) {
         extraMessages.messages(key)
       } else mo.apply(key, args)
+    }
+
+    def extraMessages(keys: Seq[String], args: Any*)
+                    (implicit lang: Lang, messages: Messages, extraMessages: ExtraMessages): String = {
+      if (extraMessages.messages.get(keys(0)).nonEmpty) {
+        extraMessages.messages(keys(0))
+      } else mo.apply(keys, args)
     }
   }
 
