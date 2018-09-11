@@ -50,6 +50,13 @@ package object playutil {
         extraMessages.messages(key)
       } else mo.apply(key, args)
     }
+
+    def extraMessages(keys: Seq[String], args: Any*)
+      (implicit lang: Lang, messages: Messages, extraMessages: ExtraMessages): String = {
+      if (extraMessages.messages.get(keys.head).nonEmpty) {
+        extraMessages.messages(keys.head)
+      } else mo.apply(keys, args)
+    }
   }
 
   case class ExtraMessages(messages: Map[String, String] = Map.empty)
