@@ -42,6 +42,8 @@ package object webmonad {
   type WebInner[A] = RWST[Future, (JourneyConfig, String, Request[AnyContent]), Path, (Path, DbState), A]
   type WebMonad[A] = EitherT[WebInner, Result, A]
 
+  lazy val log = play.api.Logger("uniform2")
+
   def webMonad[A](
     f: (String, Request[AnyContent], Path, DbState) => Future[(Option[String], Path, DbState, Either[Result, A])]
   )(implicit ec: ExecutionContext): WebMonad[A] =
@@ -200,28 +202,29 @@ package webmonad {
       (wm: String => WebMonad[A])
       (implicit format: Format[A]): WebMonad[List[A]] =
     {
-      val innerId = s"add-$id"
-      val innerPage: WebMonad[A] = wm(innerId)
+      val addId = s"add-$id"
+      val addPage: WebMonad[A] = wm(addId)
 
       val editId = s"edit-$id"
       val editPage: WebMonad[A] = wm(editId)
 
       val dataKey = s"${id}_data"
-      val updateProgram: WebMonad[List[A]] = for {
-        addItem <- innerPage
+      val addProgram: WebMonad[List[A]] = for {
+        addItem <- addPage
         _ <- update[List[A]](dataKey) { x => {
           x.getOrElse(default) :+ addItem
         }.some }
 
-        _ <- clear(innerId)
+        _ <- clear(addId)
+        _ <- clear(id)
         i <- many(id, min, max)(listingPage)(wm)
       } yield i
 
       def allItems: EitherT[WebInner, Result, List[A]] = read[List[A]](dataKey).map{_.getOrElse(default)}
 
-      def replaceItem(index: Int, item: A) = updateItem(index, List(item))
-      def removeItem(index: Int) = updateItem(index, Nil)
-      def updateItem(index: Int, item: List[A]): WebMonad[Unit] =
+      def replaceItem(index: Int, item: A) = addItem(index, List(item))
+      def removeItem(index: Int) = addItem(index, Nil)
+      def addItem(index: Int, item: List[A]): WebMonad[Unit] =
         update[List[A]](dataKey) { x =>
           {
             val all = x.getOrElse(default)
@@ -232,6 +235,7 @@ package webmonad {
       def deleteProgram(index: Int): WebMonad[List[A]] = for {
         allItems <- allItems
         _ <- removeItem(index) when deleteConfirmation(allItems(index))
+        _ <- clear(id)
         _ <- redirect(id)
       } yield {
         throw new IllegalStateException("Redirect failing for deletion!")
@@ -240,22 +244,25 @@ package webmonad {
       def editProgram(index: Int): WebMonad[List[A]] = {
         itemEdit match {
           case Some(editor) =>
+            log.info(s"Editing $index")
             for {
               allItems <- allItems
               changedItem <- editor(allItems(index))
               _ <- replaceItem(index, changedItem)
               _ <- clear(editId)
+              _ <- clear(id)
               i <- many(id, min, max)(listingPage)(wm)
             } yield i
           case _ =>
-            many(id, min, max)(listingPage)(wm)
+            log.info(s"Not editing $index")
+            clear(id) >> redirect(id) >> List.empty[A].pure[WebMonad]
         }
       }
 
       for {
         items <- allItems
         res <- listingPage(id,min,max,items).flatMap {
-          case Add => updateProgram
+          case Add => addProgram
           case Edit(index) => editProgram(index)
           case Done => allItems
           case Delete(index) => deleteProgram(index)
@@ -326,34 +333,33 @@ package webmonad {
 
           val post = request.method.toLowerCase == "post"
           val method = request.method.toLowerCase
-          val data = st.get(id);
+          val data = st.get(id)
+          log.info(s"$id :: method: $method, data: $data, targetId: $targetId, default: $default");
           {
             (method, data, targetId) match {
-
-              // empty URI, redirecting to id
               case ("get", _, "") =>
+                log.info(s"$id :: empty URI, redirecting to ./$id")
                 (
                   id.pure[List],
                   (path, st),
                   Redirect(s"./$id").asLeft[A]
                 )
-
-              // nothing in database, step in URI, render empty form
               case ("get", None, `id`) =>
+                log.info(s"$id :: nothing in database, step in URI, render empty form")
                 (
                   id.pure[List],
                   (path, st),
                   Ok(render(path, formWithDefault, implicitly)).asLeft[A]
                 )
-              // something in database, step in URI, user revisting old page, render filled in form
               case ("get", Some(json), `id`) =>
+                log.info(s"$id :: something in database, step in URI, user revisting old page, render filled in form")
                 (
                   id.pure[List],
                   (path, st),
                   Ok(render(path, form.fill(json.as[A]), implicitly)).asLeft[A]
                 )
-              // something in database, not step in URI, pass through
               case ("get", Some(json), _) =>
+                log.info(s"$id :: something in database, not step in URI, pass through")
                 (
                   id.pure[List],
                   (id :: path, st),
@@ -361,6 +367,7 @@ package webmonad {
                 )
               case ("post", _, `id`) => form.bindFromRequest.fold(
                 formWithErrors => {
+                  log.info(s"$id :: errors in form, badrequest")
                   (
                     id.pure[List],
                     (path, st),
@@ -368,6 +375,7 @@ package webmonad {
                   )
                 },
                 formData => {
+                  log.info(s"$id :: form data passed, all good, update DB and pass through")
                   (
                     id.pure[List],
                     (id :: path, st + (id -> Json.toJson(formData))),
@@ -375,27 +383,29 @@ package webmonad {
                   )
                 }
               )
-              // something in database, previous page submitted
-              case ("post", Some(json), _) if path.contains(targetId) && config.mode == SingleStep => 
+              case ("post", Some(json), _) if path.contains(targetId) && (config.mode == SingleStep || id.startsWith("edit-")) =>
+                log.info(s"$id :: something in database, previous page submitted, single step => redirect to ./$id")
                 (
                   id.pure[List],
                   (id :: path, st),
                   Redirect(s"./$id").asLeft[A]
                 )
-              // something in database, posting, not step in URI nor previous page -> pass through
               case ("post", Some(json), _) =>
+                log.info(s"$id :: something in database, posting, not step in URI nor previous page -> pass through")
                 (
                   id.pure[List],
                   (id :: path, st),
                   json.as[A].asRight[Result]
                 )
-              case ("post", None, _) if config.mode == LeapAhead && default.isDefined =>
+              case ("post", None, _) if config.mode == LeapAhead && default.isDefined && !id.startsWith("edit-") =>
+                log.info(s"$id :: nothing in db but leap ahead is set and default is defined -> pass through")
                 (
                   id.pure[List],
                   (id :: path, st + (id -> Json.toJson(default.get))),
                   default.get.asRight[Result]
-                ) 
+                )
               case ("post", _, _) | ("get", _, _) =>
+                log.info(s"$id :: some other scenario, redirecting to ./$id")
                 (
                   id.pure[List],
                   (path, st),
