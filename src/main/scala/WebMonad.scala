@@ -261,12 +261,13 @@ package webmonad {
 
       for {
         items <- allItems
-        res <- listingPage(id,min,max,items).flatMap {
-          case Add => addProgram
-          case Edit(index) => editProgram(index)
-          case Done => allItems
-          case Delete(index) => deleteProgram(index)
-        }
+        res <- if (items.size < min) addProgram
+               else listingPage(id,min,max,items).flatMap {
+                 case Add => addProgram
+                 case Edit(index) => editProgram(index)
+                 case Done => allItems
+                 case Delete(index) => deleteProgram(index)
+               }
       } yield res
 
     }
@@ -318,7 +319,7 @@ package webmonad {
     def formPage[A, B: Writeable](id: String)(
       mapping: Mapping[A],
       default: Option[A] = None,
-      journeyMode: JourneyMode = SingleStep
+      configOverride: JourneyConfig => JourneyConfig = identity
     )(
       render: (List[String], Form[A], Request[AnyContent]) => B
     )(implicit f: Format[A]): WebMonad[A] = {
@@ -327,7 +328,9 @@ package webmonad {
         default.map{form.fill}.getOrElse(form)
 
       EitherT[WebInner, Result, A] {
-        RWST { case ((config, targetId, r), (path, st)) =>
+        RWST { case ((configIn, targetId, r), (path, st)) =>
+
+          val config = configOverride(configIn)
 
           implicit val request: Request[AnyContent] = r
 
