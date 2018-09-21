@@ -156,11 +156,28 @@ package webmonad {
 
 
   sealed trait JourneyMode
+
+  /** Only advance through the journey one page at a time. This is the normal
+    * behaviour. 
+    */
   case object SingleStep extends JourneyMode
+
+  /** Advance through to the latest possible page using whatever defaults or
+    * persisted data is available. If you have a check-your-answers page it is
+    * possible to simulate a hub-and-spoke design using this option with the
+    * added advantage of knowing that the state will always be consistent with
+    * the logic. Care must be taken with listing pages however.
+    */
   case object LeapAhead extends JourneyMode
 
   case class JourneyConfig(
-    mode: JourneyMode = SingleStep
+    mode: JourneyMode = SingleStep,
+
+    /** If enabled a JSON argument containing the state can be supplied. This
+      * is intended for testing and may represent a security issue if used on a
+      * live service. 
+      */
+    allowRestoreState: Boolean = false
   )
 
   trait WebMonadController extends Controller with i18n.I18nSupport {
@@ -284,14 +301,14 @@ package webmonad {
         } { sessionUUID =>
           load(sessionUUID).flatMap { initialData =>
 
-            def parse(in: String): Map[String, JsValue] =
-              Json.parse(in) match {
-                case JsObject(v) => v.toList.toMap
-                case _ => throw new IllegalArgumentException
-              }
-
             val data = request.getQueryString("restoreState")
-              .fold(initialData)(parse)
+              .filter(_ => config.allowRestoreState)
+              .fold(initialData){
+                Json.parse(_) match {
+                  case JsObject(v) => v.toList.toMap
+                  case _ => throw new IllegalArgumentException
+                }
+              }
 
             program.value
               .run((config, id, request), (List.empty[String], data))
