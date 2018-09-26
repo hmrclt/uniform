@@ -417,7 +417,7 @@ package webmonad {
                   (id :: path, st),
                   json.as[A].asRight[Result]
                 )
-              case ("post", None, _) if config.mode == LeapAhead && default.isDefined && !id.startsWith("edit-") =>
+              case ("post" | "get", None, _) if config.mode == LeapAhead && default.isDefined && !id.startsWith("edit-") =>
                 log.info(s"$id :: nothing in db but leap ahead is set and default is defined -> pass through")
                 (
                   id.pure[List],
