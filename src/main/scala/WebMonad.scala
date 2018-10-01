@@ -261,7 +261,7 @@ package webmonad {
       def editProgram(index: Int): WebMonad[List[A]] = {
         itemEdit match {
           case Some(editor) =>
-            log.info(s"Editing $index")
+            log.debug(s"Editing $index")
             for {
               allItems <- allItems
               changedItem <- editor(allItems(index))
@@ -271,7 +271,7 @@ package webmonad {
               i <- many(id, min, max)(listingPage)(wm)
             } yield i
           case _ =>
-            log.info(s"Not editing $index")
+            log.debug(s"Not editing $index")
             clear(id) >> redirect(id) >> List.empty[A].pure[WebMonad]
         }
       }
@@ -354,32 +354,32 @@ package webmonad {
           val post = request.method.toLowerCase == "post"
           val method = request.method.toLowerCase
           val data = st.get(id)
-          log.info(s"$id :: method: $method, data: $data, targetId: $targetId, default: $default");
+          log.debug(s"$id :: method: $method, data: $data, targetId: $targetId, default: $default");
           {
             (method, data, targetId) match {
               case ("get", _, "") =>
-                log.info(s"$id :: empty URI, redirecting to ./$id")
+                log.debug(s"$id :: empty URI, redirecting to ./$id")
                 (
                   id.pure[List],
                   (path, st),
                   Redirect(s"./$id").asLeft[A]
                 )
               case ("get", None, `id`) =>
-                log.info(s"$id :: nothing in database, step in URI, render empty form")
+                log.debug(s"$id :: nothing in database, step in URI, render empty form")
                 (
                   id.pure[List],
                   (path, st),
                   Ok(render(path, formWithDefault, implicitly)).asLeft[A]
                 )
               case ("get", Some(json), `id`) =>
-                log.info(s"$id :: something in database, step in URI, user revisting old page, render filled in form")
+                log.debug(s"$id :: something in database, step in URI, user revisting old page, render filled in form")
                 (
                   id.pure[List],
                   (path, st),
                   Ok(render(path, form.fill(json.as[A]), implicitly)).asLeft[A]
                 )
               case ("get", Some(json), _) =>
-                log.info(s"$id :: something in database, not step in URI, pass through")
+                log.debug(s"$id :: something in database, not step in URI, pass through")
                 (
                   id.pure[List],
                   (id :: path, st),
@@ -387,7 +387,7 @@ package webmonad {
                 )
               case ("post", _, `id`) => form.bindFromRequest.fold(
                 formWithErrors => {
-                  log.info(s"$id :: errors in form, badrequest")
+                  log.debug(s"$id :: errors in form, badrequest")
                   (
                     id.pure[List],
                     (path, st),
@@ -395,7 +395,7 @@ package webmonad {
                   )
                 },
                 formData => {
-                  log.info(s"$id :: form data passed, all good, update DB and pass through")
+                  log.debug(s"$id :: form data passed, all good, update DB and pass through")
                   (
                     id.pure[List],
                     (id :: path, st + (id -> Json.toJson(formData))),
@@ -404,28 +404,28 @@ package webmonad {
                 }
               )
               case ("post", Some(json), _) if path.contains(targetId) && (config.mode == SingleStep || id.startsWith("edit-")) =>
-                log.info(s"$id :: something in database, previous page submitted, single step => redirect to ./$id")
+                log.debug(s"$id :: something in database, previous page submitted, single step => redirect to ./$id")
                 (
                   id.pure[List],
                   (id :: path, st),
                   Redirect(s"./$id").asLeft[A]
                 )
               case ("post", Some(json), _) =>
-                log.info(s"$id :: something in database, posting, not step in URI nor previous page -> pass through")
+                log.debug(s"$id :: something in database, posting, not step in URI nor previous page -> pass through")
                 (
                   id.pure[List],
                   (id :: path, st),
                   json.as[A].asRight[Result]
                 )
               case ("post" | "get", None, _) if config.mode == LeapAhead && default.isDefined && !id.startsWith("edit-") =>
-                log.info(s"$id :: nothing in db but leap ahead is set and default is defined -> pass through")
+                log.debug(s"$id :: nothing in db but leap ahead is set and default is defined -> pass through")
                 (
                   id.pure[List],
                   (id :: path, st + (id -> Json.toJson(default.get))),
                   default.get.asRight[Result]
                 )
               case ("post", _, _) | ("get", _, _) =>
-                log.info(s"$id :: some other scenario, redirecting to ./$id")
+                log.debug(s"$id :: some other scenario, redirecting to ./$id")
                 (
                   id.pure[List],
                   (path, st),
